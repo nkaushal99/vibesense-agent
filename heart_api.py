@@ -1,27 +1,23 @@
-"""MCP server for heart-rate ingestion and retrieval.
+"""FastAPI server to ingest heart-rate updates and push them to a queue.
 
-Run locally:
-  uv run heart_mcp.py
+Run:
+  uv run heart_api.py
 
-Send heart rate (simulating HealthKit):
+Send data (simulating HealthKit):
   curl -X POST http://127.0.0.1:8765/ingest \
        -H 'Content-Type: application/json' \
        -d '{"bpm": 82, "mood": "focused"}'
 
-The Fast Agent can call the `get_current_heart_state` tool via MCP
-to drive playback choices.
+The agent imports `event_queue` to react to new events.
 """
-
-from __future__ import annotations
 
 import asyncio
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from mcp.server import FastMCP
-from fastapi import Request
-from fastapi.responses import JSONResponse, Response
+from fastapi import FastAPI
+from pydantic import BaseModel, Field
 
 
 @dataclass
@@ -77,56 +73,41 @@ class HeartState:
         }
 
 
+class HeartIn(BaseModel):
+    bpm: float = Field(..., description="Heart rate in BPM")
+    mood: str | None = Field(None, description="Optional user mood override")
+    source: str | None = Field(None, description="Optional source identifier")
+
+
 state: HeartState | None = None
 event_queue: "asyncio.Queue[dict[str, Any]]" = asyncio.Queue()
 
-server = FastMCP(name="heart-backend", instructions="Provides current heart rate and mood hints")
+
+app = FastAPI(title="Heart Ingest", docs_url=None, redoc_url=None, openapi_url=None)
 
 
-@server.custom_route("/ingest", methods=["POST"])
-async def ingest(request: Request) -> Response:
-    """Ingest a heart-rate sample from an external source."""
+@app.post("/ingest")
+async def ingest(body: HeartIn):
+    """Ingest a heart-rate sample from an external source and push to queue."""
 
-    try:
-        payload = await request.json()
-    except Exception:  # pragma: no cover - defensive
-        return JSONResponse({"error": "invalid json"}, status_code=400)
-
-    bpm = payload.get("bpm")
-    if bpm is None:
-        return JSONResponse({"error": "bpm is required"}, status_code=400)
-    try:
-        bpm_val = float(bpm)
-    except (TypeError, ValueError):
-        return JSONResponse({"error": "bpm must be a number"}, status_code=400)
-
-    mood = payload.get("mood")
-    source = payload.get("source")
     global state
-    state = HeartState(bpm=bpm_val, mood=mood, source=source)
+    state = HeartState(bpm=body.bpm, mood=body.mood, source=body.source)
 
-    # Push to in-process queue for agents that subscribe to updates
+    payload = state.to_dict()
     try:
-        event_queue.put_nowait(state.to_dict())
+        event_queue.put_nowait(payload)
     except asyncio.QueueFull:  # pragma: no cover - default queue is unbounded
         pass
 
-    return JSONResponse({"status": "ok", "stored": state.to_dict()})
+    return {"status": "ok", "stored": payload}
 
 
-@server.tool(name="get_current_heart_state", description="Return latest heart rate, zone, mood hint, and playlist suggestion")
-async def get_current_heart_state() -> dict[str, Any]:
-    if state is None:
-        return {
-            "available": False,
-            "message": "No heart-rate data ingested yet",
-        }
-    return {
-        "available": True,
-        "data": state.to_dict(),
-    }
+@app.get("/health")
+async def health():
+    return {"status": "ok", "has_state": state is not None}
 
 
 if __name__ == "__main__":
-    # streamable-http enables both MCP and the /ingest route over HTTP
-    server.run(transport="streamable-http")
+    import uvicorn
+
+    uvicorn.run(app, host="127.0.0.1", port=8765)

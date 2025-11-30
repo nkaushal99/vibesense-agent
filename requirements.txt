@@ -2,3 +2,6 @@ fast-agent-mcp >= 0.4.1
 boto3 == 1.41.5
 PyYAML~=6.0.3
 python-dotenv~=1.2.1
+uvicorn~=0.38.0
+fastapi~=0.122.0
+pydantic~=2.12.5
