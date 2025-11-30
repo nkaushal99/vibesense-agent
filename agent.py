@@ -32,7 +32,7 @@ def load_instruction() -> str:
 fast = FastAgent("Vibe Sense")
 
 @fast.agent(
-    model="google.gemini-2.0-flash-lite",
+    model="google.gemini-2.5-flash",
     instruction=load_instruction(),
     servers=["spotify"]
 )
