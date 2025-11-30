@@ -4,6 +4,10 @@ from pathlib import Path
 import yaml
 from fast_agent import FastAgent
 
+from dotenv import load_dotenv
+load_dotenv()
+
+
 PROMPTS_FILE = Path(__file__).parent / "prompts.yaml"
 
 
@@ -22,6 +26,7 @@ def load_instruction() -> str:
 fast = FastAgent("Vibe Sense")
 
 @fast.agent(
+    model="google.gemini-2.0-flash-lite",
     instruction=load_instruction(),
     servers=["spotify"]
 )

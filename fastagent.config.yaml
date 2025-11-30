@@ -6,7 +6,7 @@
 #   bedrock.amazon.nova-lite-v1:0           # No reasoning
 #   bedrock.claude-sonnet-4-0.high          # High reasoning effort
 #   bedrock.anthropic.claude-3-7-sonnet-20250219-v1:0.medium  # Medium reasoning
-default_model: bedrock.anthropic.claude-3-5-sonnet-20240620-v1:0
+#default_model: bedrock.anthropic.claude-3-5-sonnet-20240620-v1:0
 
 # Bedrock uses the AWS credentials provider chain to authenticate.
 # This can be accomplished with aws sso login on local machines,
@@ -22,6 +22,9 @@ bedrock:
   # Note: Only Claude 4, Claude 3.7 Sonnet, and DeepSeek-R1 support reasoning
   # Other models will automatically fallback to no reasoning if unsupported
 #  reasoning_effort: "minimal"  # Default: disabled
+
+google:
+  api_key: ${GOOGLE_API_KEY}
 
 mcp:
   servers:
