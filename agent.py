@@ -9,7 +9,7 @@ from fast_agent import FastAgent
 from fast_agent.core import AgentApp
 
 from heart_api import app as heart_app
-from heart_api import event_queue
+from heart_core import event_bus
 
 load_dotenv()
 
@@ -45,7 +45,7 @@ async def main():
     async def forward_heart_events(agent_app: AgentApp) -> None:
         last_ts = 0.0
         while True:
-            event = await event_queue.get()
+            event = await event_bus.poll()
             ts = float(event.get("timestamp", 0.0))
             if ts <= last_ts:
                 continue
