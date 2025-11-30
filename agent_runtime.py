@@ -13,7 +13,7 @@ from fast_agent.core import AgentApp
 from uvicorn import Server
 
 from heart_api import app as heart_app
-from heart_core import event_bus
+from heart_core import HeartStateDTO, event_bus
 
 
 @dataclass
@@ -37,20 +37,19 @@ class HeartEventForwarder:
     async def _loop(self, agent_app: AgentApp) -> None:
         last_ts = 0.0
         while True:
-            event = await event_bus.poll()
-            ts = float(event.get("timestamp", 0.0))
+            event: HeartStateDTO = await event_bus.poll()
+            ts = float(event.timestamp)
             if ts <= last_ts:
                 continue
             last_ts = ts
 
-            bpm = event.get("bpm")
-            zone = event.get("zone")
-            mood = event.get("mood")
-            hint = event.get("playlist_hint")
-            source = event.get("source")
+            bpm = event.bpm
+            zone = event.zone
+            mood = event.mood
+            hint = event.playlist_hint
 
             summary = (
-                f"Heart update: {bpm} bpm (zone={zone}, mood={mood}, hint={hint}, source={source}). "
+                f"Heart update: {bpm} bpm (zone={zone}, mood={mood}, hint={hint}). "
                 "Pick or adjust music accordingly."
             )
             try:
@@ -59,9 +58,8 @@ class HeartEventForwarder:
                 # If the chat is closed or errors, keep listening for new events
                 pass
 
-    def start(self, agent_app: AgentApp) -> asyncio.Task:
+    def start(self, agent_app: AgentApp) -> None:
         self._task = asyncio.create_task(self._loop(agent_app), name="heart-forwarder")
-        return self._task
 
     async def stop(self) -> None:
         if not self._task:
@@ -69,4 +67,3 @@ class HeartEventForwarder:
         self._task.cancel()
         with contextlib.suppress(Exception):
             await self._task
-

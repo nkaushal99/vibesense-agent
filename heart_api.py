@@ -13,23 +13,23 @@ The agent imports the shared event bus to react to new events.
 
 from fastapi import FastAPI
 
-from heart_core import HeartIn, heart_service
+from heart_core import HeartIngestRequest, heart_service
 
 
 app = FastAPI(title="Heart Ingest", docs_url=None, redoc_url=None, openapi_url=None)
 
 
 @app.post("/ingest")
-async def ingest(body: HeartIn):
+async def ingest(body: HeartIngestRequest):
     """Ingest a heart-rate sample from an external source and push to queue."""
 
     payload = await heart_service.ingest(body)
-    return {"status": "ok", "stored": payload}
+    return {"status": "ok", "stored": payload.model_dump()}
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "state": heart_service.latest().to_dict()}
+    return {"status": "ok", "state": heart_service.latest()}
 
 
 if __name__ == "__main__":

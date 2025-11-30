@@ -2,21 +2,25 @@
 Heart domain and infrastructure components.
 """
 
-from __future__ import annotations
-
 import asyncio
 import time
 from dataclasses import dataclass, field
-from typing import Any
 
 from pydantic import BaseModel, Field
+
+
+class HeartStateDTO(BaseModel):
+    bpm: float
+    zone: str
+    mood: str
+    timestamp: float
+    playlist_hint: str
 
 
 @dataclass
 class HeartState:
     bpm: float
     mood: str | None = None
-    source: str | None = None
     timestamp: float = field(default_factory=lambda: time.time())
 
     def zone(self) -> str:
@@ -53,26 +57,23 @@ class HeartState:
         }
         return hints.get(self.zone(), "chill")
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "bpm": self.bpm,
-            "zone": self.zone(),
-            "mood": self.inferred_mood(),
-            "source": self.source,
-            "timestamp": self.timestamp,
-            "playlist_hint": self.playlist_hint(),
-            "cooldown_recommended": self.zone() in {"hard", "peak"},
-        }
+    def to_dto(self) -> HeartStateDTO:
+        return HeartStateDTO(
+            bpm=self.bpm,
+            zone=self.zone(),
+            mood=self.inferred_mood(),
+            timestamp=self.timestamp,
+            playlist_hint=self.playlist_hint()
+        )
 
 
-class HeartIn(BaseModel):
+class HeartIngestRequest(BaseModel):
     bpm: float = Field(..., description="Heart rate in BPM")
     mood: str | None = Field(None, description="Optional user mood override")
-    source: str | None = Field(None, description="Optional source identifier")
 
 
 class HeartStateRepository:
-    """In-memory store; swap with persistent repo if needed."""
+    """In-memory store"""
 
     def __init__(self) -> None:
         self._latest: HeartState | None = None
@@ -88,12 +89,12 @@ class HeartEventBus:
     """Simple async queue; can be replaced with a broker without changing callers."""
 
     def __init__(self) -> None:
-        self._queue: "asyncio.Queue[dict[str, Any]]" = asyncio.Queue()
+        self._queue: asyncio.Queue[HeartStateDTO] = asyncio.Queue()
 
-    async def push(self, payload: dict[str, Any]) -> None:
+    async def push(self, payload: HeartStateDTO) -> None:
         await self._queue.put(payload)
 
-    async def poll(self) -> dict[str, Any]:
+    async def poll(self) -> HeartStateDTO:
         return await self._queue.get()
 
 
@@ -101,22 +102,20 @@ class HeartService:
     """Coordinates repository + bus, encapsulates domain logic."""
 
     def __init__(self, repo: HeartStateRepository, bus: HeartEventBus) -> None:
-        self.repo = repo
-        self.bus = bus
+        self._repo = repo
+        self._bus = bus
 
-    async def ingest(self, data: HeartIn) -> dict[str, Any]:
-        state = HeartState(bpm=data.bpm, mood=data.mood, source=data.source)
-        self.repo.save(state)
-        payload = state.to_dict()
-
-        await self.bus.push(payload)
+    async def ingest(self, data: HeartIngestRequest) -> HeartStateDTO:
+        state = HeartState(bpm=data.bpm, mood=data.mood)
+        self._repo.save(state)
+        payload = state.to_dto()
+        await self._bus.push(payload)
         return payload
 
-    def latest(self) -> HeartState | None:
-        return self.repo.latest()
+    def latest(self) -> HeartStateDTO | None:
+        return self._repo.latest().to_dto()
 
 
 # Singletons for app-wide sharing
 event_bus = HeartEventBus()
-state_repo = HeartStateRepository()
-heart_service = HeartService(state_repo, event_bus)
+heart_service = HeartService(HeartStateRepository(), event_bus)
