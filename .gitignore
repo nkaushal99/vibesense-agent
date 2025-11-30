@@ -1,0 +1,21 @@
+# Environment and secrets
+.env
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE and project files
+.idea/
+*.iml
+
+# OS files
+.DS_Store
