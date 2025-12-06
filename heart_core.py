@@ -34,7 +34,11 @@ class HeartState:
             return "moderate"
         if bpm < 150:
             return "hard"
-        return "peak"
+        if bpm < 180:
+            return "peak"
+        if bpm < 200:
+            return "redline"
+        return "supra"
 
     def inferred_mood(self) -> str:
         zones = {
@@ -43,6 +47,8 @@ class HeartState:
             "moderate": "upbeat",
             "hard": "hype",
             "peak": "intense",
+            "redline": "max-energy",
+            "supra": "steady-intense",
         }
         if self.mood:
             return self.mood
@@ -55,6 +61,8 @@ class HeartState:
             "moderate": "upbeat pop/indie",
             "hard": "high-energy workout",
             "peak": "max intensity anthems",
+            "redline": "hard EDM or rock bangers",
+            "supra": "sustain intensity without abrupt shifts",
         }
         return hints.get(self.zone(), "chill")
 
