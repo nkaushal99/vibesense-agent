@@ -23,8 +23,8 @@ app = FastAPI(title="Heart Ingest", docs_url=None, redoc_url=None, openapi_url=N
 async def ingest(body: HeartIngestRequest):
     """Ingest a heart-rate sample from an external source and push to queue."""
 
-    payload = await heart_service.ingest(body)
-    return {"status": "ok", "stored": payload.model_dump()}
+    await heart_service.ingest(body)
+    # return {"status": "ok", "stored": payload.model_dump()}
 
 
 @app.get("/health")
@@ -35,4 +35,4 @@ async def health():
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8765)
+    uvicorn.run(app, host="0.0.0.0", port=8765)

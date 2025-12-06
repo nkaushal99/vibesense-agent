@@ -18,7 +18,7 @@ from heart_core import HeartStateDTO, event_bus
 
 @dataclass
 class HeartServerRunner:
-    host: str = "127.0.0.1"
+    host: str = "0.0.0.0"
     port: int = 8765
     log_level: str = "warning"
 
