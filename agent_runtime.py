@@ -35,13 +35,14 @@ class HeartEventForwarder:
         self._task: Optional[asyncio.Task] = None
 
     async def _loop(self, agent_app: AgentApp) -> None:
-        last_ts = 0.0
+        last_ts: dict[str, float] = {}
         while True:
             event: HeartStateDTO = await event_bus.poll()
+            user_id = event.user_id or "default"
             ts = float(event.timestamp)
-            if ts <= last_ts:
+            if ts <= last_ts.get(user_id, 0.0):
                 continue
-            last_ts = ts
+            last_ts[user_id] = ts
 
             bpm = event.bpm
             zone = event.zone
@@ -49,8 +50,8 @@ class HeartEventForwarder:
             hint = event.playlist_hint
 
             summary = (
-                f"Heart update: {bpm} bpm (zone={zone}, mood={mood}, hint={hint}). "
-                "Pick or adjust music accordingly."
+                f"Heart update for user '{user_id}': {bpm} bpm (zone={zone}, mood={mood}, hint={hint}). "
+                "Return one JSON suggestion only (no prose) so the iOS app can search/play locally."
             )
             try:
                 await agent_app.send(summary)

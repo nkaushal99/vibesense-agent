@@ -25,18 +25,3 @@ bedrock:
 
 google:
   api_key: ${GOOGLE_API_KEY}
-
-mcp:
-  servers:
-    spotify:
-      transport: stdio
-      command: uv
-      args:
-        - --directory
-        - /Users/nkaushal/demandbase/spotify-mcp
-        - run
-        - spotify-mcp
-      env:
-        SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID}
-        SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
-        SPOTIFY_REDIRECT_URI: http://127.0.0.1:8888

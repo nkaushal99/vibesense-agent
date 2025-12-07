@@ -1,19 +1,9 @@
-"""FastAPI server to ingest heart-rate updates and push them to a queue.
+"""FastAPI server to ingest heart-rate updates and surface mood suggestions."""
 
-Run:
-  uv run heart_api.py
+from fastapi import FastAPI, HTTPException
 
-Send data (simulating HealthKit):
-  curl -X POST http://127.0.0.1:8765/ingest \
-       -H 'Content-Type: application/json' \
-       -d '{"bpm": 82, "mood": "focused"}'
-
-The agent imports the shared event bus to react to new events.
-"""
-
-from fastapi import FastAPI
-
-from heart_core import HeartIngestRequest, heart_service
+from heart_core import DEFAULT_USER, HeartIngestRequest, heart_service
+from suggestions import suggestion_service
 
 
 app = FastAPI(title="Heart Ingest", docs_url=None, redoc_url=None, openapi_url=None)
@@ -21,15 +11,34 @@ app = FastAPI(title="Heart Ingest", docs_url=None, redoc_url=None, openapi_url=N
 
 @app.post("/ingest")
 async def ingest(body: HeartIngestRequest):
-    """Ingest a heart-rate sample from an external source and push to queue."""
+    """Ingest a heart-rate sample and return the latest mood suggestion."""
 
-    await heart_service.ingest(body)
-    # return {"status": "ok", "stored": payload.model_dump()}
+    state = await heart_service.ingest(body)
+    suggestion = suggestion_service.suggest(state)
+    print(f"Suggestion: {suggestion}")
+    return {"status": "ok", "state": state, "suggestion": suggestion}
 
 
 @app.get("/health")
-async def health():
-    return {"status": "ok", "state": heart_service.latest()}
+async def health(user_id: str | None = None):
+    state = heart_service.latest(user_id)
+    suggestion = suggestion_service.latest(user_id) if state else None
+    return {"status": "ok", "state": state, "suggestion": suggestion}
+
+
+@app.get("/suggestion")
+async def latest_suggestion(user_id: str | None = None):
+    """Fetch the most recent suggestion; derive one from heart state if needed."""
+
+    existing = suggestion_service.latest(user_id)
+    if existing:
+        return existing
+
+    state = heart_service.latest(user_id or DEFAULT_USER)
+    if not state:
+        raise HTTPException(status_code=404, detail="No heart data available for that user.")
+
+    return suggestion_service.suggest(state)
 
 
 if __name__ == "__main__":

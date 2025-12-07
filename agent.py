@@ -13,8 +13,7 @@ fast = FastAgent("Vibe Sense")
 
 @fast.agent(
     model="google.gemini-2.5-flash",
-    instruction=load_instruction(),
-    servers=["spotify"]
+    instruction=load_instruction()
 )
 async def main():
     heart_runner = HeartServerRunner()

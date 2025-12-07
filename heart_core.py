@@ -9,8 +9,11 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
 
+DEFAULT_USER = "default"
+
 
 class HeartStateDTO(BaseModel):
+    user_id: str | None = None
     bpm: float
     zone: str
     mood: str
@@ -21,6 +24,7 @@ class HeartStateDTO(BaseModel):
 @dataclass
 class HeartState:
     bpm: float
+    user_id: str = DEFAULT_USER
     mood: str | None = None
     timestamp: float = field(default_factory=lambda: time.time())
 
@@ -68,6 +72,7 @@ class HeartState:
 
     def to_dto(self) -> HeartStateDTO:
         return HeartStateDTO(
+            user_id=self.user_id,
             bpm=self.bpm,
             zone=self.zone(),
             mood=self.inferred_mood(),
@@ -116,12 +121,12 @@ class HeartRateStabilizer:
         self._last_publish_ts = ts
         return state
 
-    def push(self, bpm: float, mood: str | None) -> HeartState | None:
+    def push(self, bpm: float, mood: str | None, user_id: str) -> HeartState | None:
         ts = time.time()
         self._samples.append(HeartRateSample(ts, bpm))
 
         smoothed = self._smoothed_bpm()
-        candidate = HeartState(bpm=smoothed, mood=mood, timestamp=ts)
+        candidate = HeartState(bpm=smoothed, mood=mood, timestamp=ts, user_id=user_id)
 
         if self._latest is None:
             return self._record(candidate, ts)
@@ -155,6 +160,7 @@ class HeartRateStabilizer:
 class HeartIngestRequest(BaseModel):
     bpm: float = Field(..., description="Heart rate in BPM")
     mood: str | None = Field(None, description="Optional user mood override")
+    user_id: str | None = Field(None, description="User id to keep samples scoped to one person.")
 
 
 class HeartStateRepository:
@@ -183,36 +189,53 @@ class HeartEventBus:
         return await self._queue.get()
 
 
-class HeartService:
-    """Coordinates repository + bus, encapsulates domain logic."""
+@dataclass
+class HeartUserContext:
+    repo: HeartStateRepository
+    stabilizer: HeartRateStabilizer
 
-    def __init__(
-        self,
-        repo: HeartStateRepository,
-        bus: HeartEventBus,
-        stabilizer: HeartRateStabilizer,
-    ) -> None:
-        self._repo = repo
+
+class HeartService:
+    """Coordinates repository + bus, encapsulates domain logic per user."""
+
+    def __init__(self, bus: HeartEventBus, stabilizer_config: HeartStabilizerConfig) -> None:
         self._bus = bus
-        self._stabilizer = stabilizer
+        self._config = stabilizer_config
+        self._contexts: dict[str, HeartUserContext] = {}
+
+    def _context(self, user_id: str) -> HeartUserContext:
+        ctx = self._contexts.get(user_id)
+        if ctx:
+            return ctx
+        ctx = HeartUserContext(
+            repo=HeartStateRepository(),
+            stabilizer=HeartRateStabilizer(self._config),
+        )
+        self._contexts[user_id] = ctx
+        return ctx
 
     async def ingest(self, data: HeartIngestRequest) -> HeartStateDTO:
-        state = self._stabilizer.push(data.bpm, data.mood)
+        user_id = data.user_id or DEFAULT_USER
+        ctx = self._context(user_id)
+        state = ctx.stabilizer.push(data.bpm, data.mood, user_id)
 
         # If the stabilizer filtered the sample, surface the current stable state.
         if state is None:
-            latest = self._stabilizer.latest() or self._repo.latest()
+            latest = ctx.stabilizer.latest() or ctx.repo.latest()
             if latest:
                 return latest.to_dto()
-            state = HeartState(bpm=data.bpm, mood=data.mood)
+            state = HeartState(bpm=data.bpm, mood=data.mood, user_id=user_id)
 
-        self._repo.save(state)
+        ctx.repo.save(state)
         payload = state.to_dto()
         await self._bus.push(payload)
         return payload
 
-    def latest(self) -> HeartStateDTO | None:
-        stable = self._stabilizer.latest() or self._repo.latest()
+    def latest(self, user_id: str | None = None) -> HeartStateDTO | None:
+        ctx = self._contexts.get(user_id or DEFAULT_USER)
+        if not ctx:
+            return None
+        stable = ctx.stabilizer.latest() or ctx.repo.latest()
         if stable:
             return stable.to_dto()
         return None
@@ -220,4 +243,4 @@ class HeartService:
 
 # Singletons for app-wide sharing
 event_bus = HeartEventBus()
-heart_service = HeartService(HeartStateRepository(), event_bus, HeartRateStabilizer(HeartStabilizerConfig()))
+heart_service = HeartService(event_bus, HeartStabilizerConfig())
