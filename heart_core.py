@@ -12,13 +12,29 @@ from pydantic import BaseModel, Field
 DEFAULT_USER = "default"
 
 
+def time_of_day_bucket(ts: float | None = None) -> str:
+    ts = ts or time.time()
+    hour = time.localtime(ts).tm_hour
+    if 5 <= hour < 12:
+        return "morning"
+    if 12 <= hour < 17:
+        return "afternoon"
+    if 17 <= hour < 22:
+        return "evening"
+    return "night"
+
+
 class HeartStateDTO(BaseModel):
     user_id: str | None = None
     bpm: float
-    zone: str
-    mood: str
+    zone: str | None = None
+    mood: str | None = None
     timestamp: float
-    playlist_hint: str
+    playlist_hint: str | None = None
+    hrv_ms: float | None = None
+    workout_type: str | None = None
+    resting_hr: float | None = None
+    time_of_day: str | None = None
 
 
 @dataclass
@@ -26,6 +42,10 @@ class HeartState:
     bpm: float
     user_id: str = DEFAULT_USER
     mood: str | None = None
+    hrv_ms: float | None = None
+    workout_type: str | None = None
+    resting_hr: float | None = None
+    time_of_day: str | None = None
     timestamp: float = field(default_factory=lambda: time.time())
 
     def zone(self) -> str:
@@ -44,40 +64,18 @@ class HeartState:
             return "redline"
         return "supra"
 
-    def inferred_mood(self) -> str:
-        zones = {
-            "rest": "chill",
-            "light": "focus",
-            "moderate": "upbeat",
-            "hard": "hype",
-            "peak": "intense",
-            "redline": "max-energy",
-            "supra": "steady-intense",
-        }
-        if self.mood:
-            return self.mood
-        return zones.get(self.zone(), "chill")
-
-    def playlist_hint(self) -> str:
-        hints = {
-            "rest": "calm acoustic or lo-fi",
-            "light": "steady focus playlists",
-            "moderate": "upbeat pop/indie",
-            "hard": "high-energy workout",
-            "peak": "max intensity anthems",
-            "redline": "hard EDM or rock bangers",
-            "supra": "sustain intensity without abrupt shifts",
-        }
-        return hints.get(self.zone(), "chill")
-
     def to_dto(self) -> HeartStateDTO:
         return HeartStateDTO(
             user_id=self.user_id,
             bpm=self.bpm,
             zone=self.zone(),
-            mood=self.inferred_mood(),
+            mood=self.mood,
             timestamp=self.timestamp,
-            playlist_hint=self.playlist_hint()
+            playlist_hint=None,
+            hrv_ms=self.hrv_ms,
+            workout_type=self.workout_type,
+            resting_hr=self.resting_hr,
+            time_of_day=self.time_of_day,
         )
 
 
@@ -121,12 +119,30 @@ class HeartRateStabilizer:
         self._last_publish_ts = ts
         return state
 
-    def push(self, bpm: float, mood: str | None, user_id: str) -> HeartState | None:
+    def push(
+        self,
+        bpm: float,
+        mood: str | None,
+        user_id: str,
+        hrv_ms: float | None = None,
+        workout_type: str | None = None,
+        resting_hr: float | None = None,
+        time_of_day: str | None = None,
+    ) -> HeartState | None:
         ts = time.time()
         self._samples.append(HeartRateSample(ts, bpm))
 
         smoothed = self._smoothed_bpm()
-        candidate = HeartState(bpm=smoothed, mood=mood, timestamp=ts, user_id=user_id)
+        candidate = HeartState(
+            bpm=smoothed,
+            mood=mood,
+            timestamp=ts,
+            user_id=user_id,
+            hrv_ms=hrv_ms,
+            workout_type=workout_type,
+            resting_hr=resting_hr,
+            time_of_day=time_of_day,
+        )
 
         if self._latest is None:
             return self._record(candidate, ts)
@@ -161,6 +177,10 @@ class HeartIngestRequest(BaseModel):
     bpm: float = Field(..., description="Heart rate in BPM")
     mood: str | None = Field(None, description="Optional user mood override")
     user_id: str | None = Field(None, description="User id to keep samples scoped to one person.")
+    hrv_ms: float | None = Field(None, description="Heart rate variability (SDNN in ms).")
+    workout_type: str | None = Field(None, description="Optional workout/activity label (running, cycling, walking, hiit, strength, sedentary, unknown).")
+    resting_hr: float | None = Field(None, description="Resting heart rate baseline if available.")
+    time_of_day: str | None = Field(None, description="Client-provided time of day bucket.")
 
 
 class HeartStateRepository:
@@ -216,15 +236,32 @@ class HeartService:
 
     async def ingest(self, data: HeartIngestRequest) -> HeartStateDTO:
         user_id = data.user_id or DEFAULT_USER
+        tod = data.time_of_day or time_of_day_bucket()
         ctx = self._context(user_id)
-        state = ctx.stabilizer.push(data.bpm, data.mood, user_id)
+        state = ctx.stabilizer.push(
+            data.bpm,
+            data.mood,
+            user_id,
+            data.hrv_ms,
+            data.workout_type,
+            data.resting_hr,
+            tod,
+        )
 
         # If the stabilizer filtered the sample, surface the current stable state.
         if state is None:
             latest = ctx.stabilizer.latest() or ctx.repo.latest()
             if latest:
                 return latest.to_dto()
-            state = HeartState(bpm=data.bpm, mood=data.mood, user_id=user_id)
+            state = HeartState(
+                bpm=data.bpm,
+                mood=data.mood,
+                user_id=user_id,
+                hrv_ms=data.hrv_ms,
+                workout_type=data.workout_type,
+                resting_hr=data.resting_hr,
+                time_of_day=tod,
+            )
 
         ctx.repo.save(state)
         payload = state.to_dto()

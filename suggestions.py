@@ -87,12 +87,43 @@ class SuggestionService:
         user_id = state.user_id or DEFAULT_USER
         defaults = self._pick_defaults(state.zone)
 
-        mood = state.mood or defaults["mood"]
-        query = self._build_query(defaults["query"], state.playlist_hint)
-        action = defaults["action"]
-        intensity = defaults["intensity"]
+        hrv = state.hrv_ms or 0.0
+        resting = state.resting_hr or 60.0
+        workout = (state.workout_type or "unknown").lower()
+        is_workout = workout not in ("unknown", "sedentary", "rest", "none")
+        high_bpm_for_rest = state.bpm > max(90, resting + 15)
+        low_hrv = hrv > 0 and hrv < 45
+        recovered = hrv >= 65 or (state.zone in ("rest", "light") and state.bpm <= resting + 5)
+        stressed = (not is_workout) and (low_hrv or high_bpm_for_rest) and state.zone not in ("hard", "peak", "redline")
 
-        reason = f"{state.bpm:.0f} bpm in {state.zone} zone → {mood} vibe"
+        if stressed:
+            mood = "calm"
+            action = "play_playlist"
+            intensity = 0.2
+            query = "calming ambient instrumental"
+            reason = f"{state.bpm:.0f} bpm w/ low HRV ({hrv:.0f} ms) and no workout → calming"
+        elif recovered:
+            mood = "focus"
+            action = "play_playlist"
+            intensity = 0.35
+            query = "deep focus beats"
+            reason = f"Recovered (HRV {hrv:.0f} ms, {state.zone} zone) → focus music"
+        elif is_workout:
+            mood = state.mood or defaults["mood"]
+            action = defaults["action"]
+            intensity = defaults["intensity"]
+            query = self._build_query(defaults["query"], workout)
+            reason = f"Workout: {workout} in {state.zone} zone at {state.bpm:.0f} bpm → keep energy"
+        else:
+            mood = state.mood or defaults["mood"]
+            action = defaults["action"]
+            intensity = defaults["intensity"]
+            query = self._build_query(defaults["query"], state.playlist_hint)
+            reason = f"{state.bpm:.0f} bpm in {state.zone} zone → {mood} vibe"
+
+        if state.time_of_day:
+            reason = f"{reason} [{state.time_of_day}]"
+
         suggestion = MoodSuggestion(
             user_id=user_id,
             mood=mood,
