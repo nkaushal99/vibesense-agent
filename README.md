@@ -2,10 +2,17 @@
 
 Backend responsibilities are narrowed: receive heart-rate/context signals and return a structured mood suggestion the iOS app can act on. Spotify authentication, search, and playback now live entirely on the device (PKCE).
 
+Key code paths:
+- `vibesense/app/heart_core.py`: heart-rate smoothing + domain logic.
+- `vibesense/app/heart_api.py`: FastAPI surface.
+- `vibesense/db/profile_store.py`: SQLite-backed user context + preferences.
+- `vibesense/agent/fast_agent_client.py`: FastAgent wiring and suggestion generation.
+
 ## Quick start
 - Install deps: `uv pip install -r requirements.txt`
-- Run the ingest API: `uvicorn heart_api:app --host 0.0.0.0 --port 8765`
-- The agent client uses `fast-agent-mcp` for suggestions (see `fastagent.config.yaml` for provider configuration).
+- Run the ingest API (boots FastAgent too): `python -m vibesense.main`  
+  - Override host/port with `HOST` / `PORT` env vars.
+- The agent client uses `fast-agent-mcp` for suggestions (see `vibesense/agent/fastagent.config.yaml` for provider configuration).
 
 ## API
 - `POST /ingest`
@@ -38,7 +45,7 @@ Responses use:
 `search_query` is ready for Spotify search on-device; the backend never handles tokens or playback.
 
 ## Agent behavior
-- User context and preferences are stored in `data/vibe_sense.db` (SQLite, override with `VIBE_SENSE_DB`). Preferences are optional but help ground suggestions (`preferred_genres`, `avoid_genres`, `favorite_artists`, `dislikes`, `energy_profile`, `notes`).
-- `agent_client.generate_agent_suggestion` is async and uses fast-agent with a `get_user_profile` tool (reads the DB) to ground responses.
-- `prompts.yaml` instructs the LLM to emit only the JSON suggestion per heart update. The FastAgent runtime no longer connects to Spotify MCP; the iOS app owns auth and playback.
+- User context and preferences are stored in `data/vibe_sense.db` (SQLite, override with `VIBE_SENSE_DB`) via `vibesense.db.profile_store`. Preferences are optional but help ground suggestions (`preferred_genres`, `avoid_genres`, `favorite_artists`, `dislikes`, `energy_profile`, `notes`).
+- `vibesense.agent.generate_agent_suggestion` is async and uses fast-agent with a `get_user_profile` tool (reads the DB) to ground responses.
+- `vibesense/agent/prompts.yaml` instructs the LLM to emit only the JSON suggestion per heart update. The FastAgent runtime no longer connects to Spotify MCP; the iOS app owns auth and playback.
 - Env toggles: `FAST_AGENT_MODEL` / `FAST_AGENT_TEMPERATURE` to override defaults.

@@ -3,14 +3,14 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from agent_client import generate_agent_suggestion
-from agent_context import (
+from vibesense.app.heart_core import DEFAULT_USER, HeartIngestRequest, heart_service
+from vibesense.agent import generate_agent_suggestion
+from vibesense.db import (
     UserPreferences,
     get_context,
     get_preferences,
     set_preferences,
 )
-from heart_core import DEFAULT_USER, HeartIngestRequest, heart_service
 
 
 app = FastAPI(title="Heart Ingest", docs_url=None, redoc_url=None, openapi_url=None)

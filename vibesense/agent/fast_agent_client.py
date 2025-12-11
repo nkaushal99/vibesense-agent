@@ -1,4 +1,4 @@
-"""Agent client that can run via fast-agent with a DB-backed user profile."""
+"""FastAgent integration kept separate from the API surface."""
 
 from __future__ import annotations
 
@@ -8,12 +8,12 @@ import time
 from typing import Any, Dict
 
 from fastapi import HTTPException
-
-from heart_core import HeartStateDTO
-from agent_context import AgentContext, get_user_profile, set_context
-from prompt_loader import load_instruction
-
 from dotenv import load_dotenv
+
+from vibesense.app.heart_core import HeartStateDTO
+from vibesense.agent.prompt_loader import load_instruction
+from vibesense.db import AgentContext, set_context
+from vibesense.tools import UserProfileTool
 
 load_dotenv()
 
@@ -28,21 +28,6 @@ except Exception as exc:  # pragma: no cover - import-time guard
     raise RuntimeError("fast-agent-mcp is required for suggestions") from exc
 
 
-class UserProfileTool:
-    name = "get_user_profile"
-    description = "Fetch stored context + preferences for a user so music suggestions stay personalized."
-    parameters_schema = {
-        "type": "object",
-        "properties": {
-            "user_id": {"type": "string", "description": "ID of the user to load (defaults to 'default')."},
-        },
-        "required": ["user_id"],
-    }
-
-    def __call__(self, user_id: str) -> Dict[str, Any]:
-        return get_user_profile(user_id or "default")
-
-
 def _build_fast_agent() -> FastAgent:
     """Create the FastAgent instance at application startup."""
     tool = UserProfileTool()
@@ -50,6 +35,7 @@ def _build_fast_agent() -> FastAgent:
 
     tool_registrar = getattr(fast, "tool", None)
     if callable(tool_registrar):
+
         async def user_profile_tool(user_id: str) -> Dict[str, Any]:
             return tool(user_id)
 
@@ -72,7 +58,6 @@ def _build_fast_agent() -> FastAgent:
 
 
 def _build_fast_agent_prompt(state: HeartStateDTO, user_id: str) -> str:
-    # instruction = load_instruction()
     state_json = json.dumps(state.model_dump(), ensure_ascii=False)
     return f""" 
             Tooling: call get_user_profile(user_id) to pull the latest stored context and preferences before finalizing.
@@ -87,10 +72,18 @@ def _build_fast_agent_prompt(state: HeartStateDTO, user_id: str) -> str:
 
 _FAST_AGENT = _build_fast_agent()
 
+
+def ensure_agent_ready() -> None:
+    """No-op helper to force FastAgent construction at startup."""
+
+    _ = _FAST_AGENT
+
+
 def _clean_result(result: str) -> dict[str, Any]:
-    result = result.replace('```json\n', '')
-    result = result.replace('\n```', '')
+    result = result.replace("```json\n", "")
+    result = result.replace("\n```", "")
     return json.loads(result)
+
 
 def _extract_suggestion(result: Any) -> dict | None:
     result = _clean_result(result)
@@ -101,7 +94,6 @@ def _extract_suggestion(result: Any) -> dict | None:
             maybe = result.get(key)
             if isinstance(maybe, dict):
                 return maybe
-        # Already a suggestion-like dict.
         return result
     if hasattr(result, "output"):
         out = getattr(result, "output")
@@ -151,3 +143,6 @@ async def generate_agent_suggestion(state: HeartStateDTO) -> dict:
     prompt = _build_fast_agent_prompt(state, user)
     suggestion = await _call_fast_agent(prompt)
     return _finalize_suggestion(suggestion, user)
+
+
+__all__ = ["generate_agent_suggestion"]

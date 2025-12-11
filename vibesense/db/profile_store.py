@@ -1,16 +1,19 @@
+"""Persistence layer for user context and preferences."""
+
 from __future__ import annotations
 
 import json
 import os
 import sqlite3
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from threading import Lock
 from typing import Any, Dict, Iterable, List
 
 
-DB_PATH = Path(os.getenv("VIBE_SENSE_DB", Path(__file__).parent / "data" / "vibe_sense.db"))
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+DB_PATH = Path(os.getenv("VIBE_SENSE_DB", ROOT_DIR / "data" / "vibe_sense.db"))
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 _lock = Lock()
 
@@ -77,12 +80,19 @@ class AgentContext:
 
 @dataclass
 class UserPreferences:
-    preferred_genres: List[str] = field(default_factory=list)
-    avoid_genres: List[str] = field(default_factory=list)
-    favorite_artists: List[str] = field(default_factory=list)
-    dislikes: List[str] = field(default_factory=list)
+    preferred_genres: List[str] = None
+    avoid_genres: List[str] = None
+    favorite_artists: List[str] = None
+    dislikes: List[str] = None
     notes: str = ""
     energy_profile: str = ""
+
+    def __post_init__(self) -> None:
+        # Ensure list defaults are not shared across instances.
+        self.preferred_genres = list(self.preferred_genres or [])
+        self.avoid_genres = list(self.avoid_genres or [])
+        self.favorite_artists = list(self.favorite_artists or [])
+        self.dislikes = list(self.dislikes or [])
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
