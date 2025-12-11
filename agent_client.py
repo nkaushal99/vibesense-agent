@@ -1,89 +1,140 @@
-"""Lightweight client to invoke the Vibe Sense agent for a suggestion."""
+"""Agent client that can run via fast-agent with a DB-backed user profile."""
 
 from __future__ import annotations
 
 import json
 import os
 import time
-from functools import lru_cache
+from typing import Any, Dict
 
 from fastapi import HTTPException
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 from heart_core import HeartStateDTO
-from agent_context import AgentContext, get_context, set_context
+from agent_context import AgentContext, get_user_profile, set_context
 from prompt_loader import load_instruction
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
-MODEL = "gemini-2.5-flash"
-TEMPERATURE = 0.3
+MODEL = os.getenv("FAST_AGENT_MODEL", "google.gemini-2.5-flash")
+TEMPERATURE = float(os.getenv("FAST_AGENT_TEMPERATURE", "0.3"))
+
+try:
+    from fast_agent.core.fastagent import FastAgent  # type: ignore
+    from fast_agent.core.prompt import Prompt  # type: ignore
+    from fast_agent.types import RequestParams  # type: ignore
+except Exception as exc:  # pragma: no cover - import-time guard
+    raise RuntimeError("fast-agent-mcp is required for suggestions") from exc
 
 
-def _build_prompt(state: HeartStateDTO, context: AgentContext) -> str:
-    instruction = load_instruction()
-    state_json = json.dumps(state.model_dump(), ensure_ascii=False)
-    ctx_json = json.dumps(context.to_dict(), ensure_ascii=False)
-    return f"""{instruction}
+class UserProfileTool:
+    name = "get_user_profile"
+    description = "Fetch stored context + preferences for a user so music suggestions stay personalized."
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "user_id": {"type": "string", "description": "ID of the user to load (defaults to 'default')."},
+        },
+        "required": ["user_id"],
+    }
 
-[STATE]
-{state_json}
-
-{{
-  "context": {ctx_json}
-}}
-
-Return only the JSON object described in RESPONSE FORMAT, no prose."""
+    def __call__(self, user_id: str) -> Dict[str, Any]:
+        return get_user_profile(user_id or "default")
 
 
-@lru_cache(maxsize=1)
-def _build_llm(api_key: str) -> ChatGoogleGenerativeAI:
-    return ChatGoogleGenerativeAI(
+def _build_fast_agent() -> FastAgent:
+    """Create the FastAgent instance at application startup."""
+    tool = UserProfileTool()
+    fast = FastAgent("VibeSense Agent")
+
+    tool_registrar = getattr(fast, "tool", None)
+    if callable(tool_registrar):
+        async def user_profile_tool(user_id: str) -> Dict[str, Any]:
+            return tool(user_id)
+
+        tool_registrar(
+            name=tool.name,
+            description=tool.description,
+            parameters_schema=tool.parameters_schema,
+        )(user_profile_tool)
+
+    @fast.agent(
+        name="vibe_suggester",
+        instruction=load_instruction(),
         model=MODEL,
-        api_key=api_key,
-        temperature=TEMPERATURE,
+        request_params=RequestParams(temperature=TEMPERATURE),
     )
+    async def run_agent() -> Any:
+        return None  # Body unused; send() drives work.
+
+    return fast
 
 
-def _invoke_gemini(prompt: str) -> dict:
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="GOOGLE_API_KEY not set")
+def _build_fast_agent_prompt(state: HeartStateDTO, user_id: str) -> str:
+    # instruction = load_instruction()
+    state_json = json.dumps(state.model_dump(), ensure_ascii=False)
+    return f""" 
+            Tooling: call get_user_profile(user_id) to pull the latest stored context and preferences before finalizing.
+            Current user_id: {user_id}
+            
+            [STATE]
+            {state_json}
+            
+            Return only the JSON object described in RESPONSE FORMAT, no prose.
+            """
 
-    llm = _build_llm(api_key)
+
+_FAST_AGENT = _build_fast_agent()
+
+def _clean_result(result: str) -> dict[str, Any]:
+    result = result.replace('```json\n', '')
+    result = result.replace('\n```', '')
+    return json.loads(result)
+
+def _extract_suggestion(result: Any) -> dict | None:
+    result = _clean_result(result)
+    if result is None:
+        return None
+    if isinstance(result, dict):
+        for key in ("suggestion", "output", "response", "result"):
+            maybe = result.get(key)
+            if isinstance(maybe, dict):
+                return maybe
+        # Already a suggestion-like dict.
+        return result
+    if hasattr(result, "output"):
+        out = getattr(result, "output")
+        if isinstance(out, dict):
+            return out
+    return None
+
+
+async def _call_fast_agent(prompt: str) -> dict:
     try:
-        result = llm.invoke(prompt)
-    except Exception as exc:  # pragma: no cover - network/LLM path
-        raise HTTPException(status_code=502, detail="LLM call failed") from exc
+        async with _FAST_AGENT.run() as agent:
+            result = await agent.vibe_suggester.send(Prompt.user(prompt))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"fast-agent failed: {exc}") from exc
 
-    text = getattr(result, "content", None)
-    if isinstance(text, list):
-        text = " ".join(part for part in text if isinstance(part, str))
-    if not isinstance(text, str):
-        raise HTTPException(status_code=502, detail="Invalid response from LLM")
-    try:
-        cleaned = text.replace("```json", "").replace("```", "").strip()
-        return json.loads(cleaned)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=502, detail="LLM did not return JSON") from exc
+    suggestion = _extract_suggestion(result)
+    if suggestion:
+        return suggestion
+    if isinstance(result, str):
+        try:
+            return json.loads(result)
+        except json.JSONDecodeError:
+            pass
+    raise HTTPException(status_code=502, detail="fast-agent returned unsupported format")
 
 
-def generate_agent_suggestion(state: HeartStateDTO) -> dict:
-    user = state.user_id or "default"
-    context = get_context(user)
-    prompt = _build_prompt(state, context)
-    suggestion = _invoke_gemini(prompt)
-
-    # Ensure required fields exist; agent isnt concerned with these
-    suggestion.setdefault("user_id", user)
+def _finalize_suggestion(raw: dict, user_id: str) -> dict:
+    suggestion = dict(raw)
+    suggestion.setdefault("user_id", user_id)
     suggestion.setdefault("generated_at", time.time())
     suggestion.setdefault("reason", "")
-    # suggestion["heart"] = state.model_dump()
-    # Update stored context for this user.
     set_context(
-        user,
+        user_id,
         AgentContext(
             last_action=str(suggestion.get("suggested_action", "keep_current")),
             last_query=str(suggestion.get("search_query", "")),
@@ -93,3 +144,10 @@ def generate_agent_suggestion(state: HeartStateDTO) -> dict:
         ),
     )
     return suggestion
+
+
+async def generate_agent_suggestion(state: HeartStateDTO) -> dict:
+    user = state.user_id or "default"
+    prompt = _build_fast_agent_prompt(state, user)
+    suggestion = await _call_fast_agent(prompt)
+    return _finalize_suggestion(suggestion, user)
