@@ -2,7 +2,6 @@
 Heart domain and infrastructure components.
 """
 
-import asyncio
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -196,19 +195,6 @@ class HeartStateRepository:
         return self._latest
 
 
-class HeartEventBus:
-    """Simple async queue; can be replaced with a broker without changing callers."""
-
-    def __init__(self) -> None:
-        self._queue: asyncio.Queue[HeartStateDTO] = asyncio.Queue()
-
-    async def push(self, payload: HeartStateDTO) -> None:
-        await self._queue.put(payload)
-
-    async def poll(self) -> HeartStateDTO:
-        return await self._queue.get()
-
-
 @dataclass
 class HeartUserContext:
     repo: HeartStateRepository
@@ -216,10 +202,9 @@ class HeartUserContext:
 
 
 class HeartService:
-    """Coordinates repository + bus, encapsulates domain logic per user."""
+    """Coordinates repository + stabilizer, encapsulates domain logic per user."""
 
-    def __init__(self, bus: HeartEventBus, stabilizer_config: HeartStabilizerConfig) -> None:
-        self._bus = bus
+    def __init__(self, stabilizer_config: HeartStabilizerConfig) -> None:
         self._config = stabilizer_config
         self._contexts: dict[str, HeartUserContext] = {}
 
@@ -264,9 +249,7 @@ class HeartService:
             )
 
         ctx.repo.save(state)
-        payload = state.to_dto()
-        await self._bus.push(payload)
-        return payload
+        return state.to_dto()
 
     def latest(self, user_id: str | None = None) -> HeartStateDTO | None:
         ctx = self._contexts.get(user_id or DEFAULT_USER)
@@ -278,6 +261,5 @@ class HeartService:
         return None
 
 
-# Singletons for app-wide sharing
-event_bus = HeartEventBus()
-heart_service = HeartService(event_bus, HeartStabilizerConfig())
+# Singleton for app-wide sharing
+heart_service = HeartService(HeartStabilizerConfig())

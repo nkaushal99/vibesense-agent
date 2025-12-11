@@ -16,6 +16,7 @@ venv/
 # IDE and project files
 .idea/
 *.iml
+.cursor/
 
 # OS files
 .DS_Store

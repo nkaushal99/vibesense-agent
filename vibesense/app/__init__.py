@@ -2,7 +2,6 @@
 
 from .heart_core import (
     DEFAULT_USER,
-    HeartEventBus,
     HeartIngestRequest,
     HeartRateSample,
     HeartRateStabilizer,
@@ -11,14 +10,12 @@ from .heart_core import (
     HeartStateDTO,
     HeartStateRepository,
     HeartStabilizerConfig,
-    event_bus,
     heart_service,
     time_of_day_bucket,
 )
 
 __all__ = [
     "DEFAULT_USER",
-    "HeartEventBus",
     "HeartIngestRequest",
     "HeartRateSample",
     "HeartRateStabilizer",
@@ -27,7 +24,6 @@ __all__ = [
     "HeartStateDTO",
     "HeartStateRepository",
     "HeartStabilizerConfig",
-    "event_bus",
     "heart_service",
     "time_of_day_bucket",
 ]
