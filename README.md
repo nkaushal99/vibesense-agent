@@ -7,12 +7,15 @@ Key code paths:
 - `vibesense/app/heart_api.py`: FastAPI surface.
 - `vibesense/db/profile_store.py`: SQLite-backed user context + preferences.
 - `vibesense/agent/fast_agent_client.py`: FastAgent wiring and suggestion generation.
+- `vibesense/tools/database.py`: fastmcp server exposing user profile/context tools.
+- `vibesense/agent/fastagent.config.yaml`: model + MCP server configuration.
 
 ## Quick start
 - Install deps: `uv pip install -r requirements.txt`
 - Run the ingest API (boots FastAgent too): `python -m vibesense.main`  
   - Override host/port with `HOST` / `PORT` env vars.
-- The agent client uses `fast-agent-mcp` for suggestions (see `vibesense/agent/fastagent.config.yaml` for provider configuration).
+- Run the MCP tools server (stdio by default): `python -m vibesense.tools.database`
+- The agent client uses `fast-agent-mcp` for suggestions (see `vibesense/agent/fastagent.config.yaml` for provider configuration and MCP wiring).
 
 ## API
 - `POST /ingest`

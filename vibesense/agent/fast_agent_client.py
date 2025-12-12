@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from pathlib import Path
 from typing import Any, Dict
 
 from fastapi import HTTPException
@@ -30,25 +31,14 @@ except Exception as exc:  # pragma: no cover - import-time guard
 
 def _build_fast_agent() -> FastAgent:
     """Create the FastAgent instance at application startup."""
-    tool = UserProfileTool()
-    fast = FastAgent("VibeSense Agent")
-
-    tool_registrar = getattr(fast, "tool", None)
-    if callable(tool_registrar):
-
-        async def user_profile_tool(user_id: str) -> Dict[str, Any]:
-            return tool(user_id)
-
-        tool_registrar(
-            name=tool.name,
-            description=tool.description,
-            parameters_schema=tool.parameters_schema,
-        )(user_profile_tool)
+    config_path = Path(__file__).with_name("fastagent.config.yaml")
+    fast = FastAgent("VibeSense Agent", config_path=str(config_path))
 
     @fast.agent(
         name="vibe_suggester",
         instruction=load_instruction(),
         model=MODEL,
+        servers=['database'],
         request_params=RequestParams(temperature=TEMPERATURE),
     )
     async def run_agent() -> Any:

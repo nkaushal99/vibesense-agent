@@ -1,2 +1,8 @@
 google:
   api_key: ${GOOGLE_API_KEY}
+
+mcp:
+  servers:
+    database:
+      command: "uv"
+      args: ["run", "python", "-m", "vibesense.tools.database"]
