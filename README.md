@@ -4,7 +4,9 @@ Backend responsibilities are narrowed: receive heart-rate/context signals and re
 
 Key code paths:
 - `vibesense/app/heart_core.py`: heart-rate smoothing + domain logic.
-- `vibesense/app/heart_api.py`: FastAPI surface.
+- `vibesense/app/heart_api.py`: heart ingest + suggestion router (no DB concerns).
+- `vibesense/app/db_api.py`: preferences router for DB-backed settings.
+- `vibesense/app/api.py`: assembles the FastAPI app from the separate routers.
 - `vibesense/db/profile_store.py`: SQLite-backed user context + preferences.
 - `vibesense/agent/fast_agent_client.py`: FastAgent wiring and suggestion generation.
 - `vibesense/tools/database.py`: fastmcp server exposing user profile/context tools.

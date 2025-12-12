@@ -8,7 +8,7 @@ import os
 import uvicorn
 
 from vibesense.agent import ensure_agent_ready
-from vibesense.app.heart_api import app
+from vibesense.app.api import app
 
 
 def run() -> None:
