@@ -14,7 +14,6 @@ from dotenv import load_dotenv
 from vibesense.app.heart_core import HeartStateDTO
 from vibesense.agent.prompt_loader import load_instruction
 from vibesense.db import AgentContext, set_context
-from vibesense.tools import UserProfileTool
 
 load_dotenv()
 
