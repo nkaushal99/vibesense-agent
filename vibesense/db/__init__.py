@@ -1,8 +1,8 @@
 """DB package exposing profile/context helpers."""
 
+from .backend import DatabaseBackend, get_backend
+from .models import AgentContext, UserPreferences
 from .profile_store import (
-    AgentContext,
-    UserPreferences,
     get_context,
     get_preferences,
     get_user_profile,
@@ -13,6 +13,8 @@ from .profile_store import (
 __all__ = [
     "AgentContext",
     "UserPreferences",
+    "DatabaseBackend",
+    "get_backend",
     "get_context",
     "set_context",
     "get_preferences",
