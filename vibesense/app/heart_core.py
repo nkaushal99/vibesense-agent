@@ -219,7 +219,7 @@ class HeartService:
         self._contexts[user_id] = ctx
         return ctx
 
-    async def ingest(self, data: HeartIngestRequest) -> HeartStateDTO:
+    async def ingest(self, data: HeartIngestRequest) -> tuple[HeartStateDTO, bool]:
         user_id = data.user_id or DEFAULT_USER
         tod = data.time_of_day or time_of_day_bucket()
         ctx = self._context(user_id)
@@ -234,10 +234,11 @@ class HeartService:
         )
 
         # If the stabilizer filtered the sample, surface the current stable state.
+        changed = True
         if state is None:
             latest = ctx.stabilizer.latest() or ctx.repo.latest()
             if latest:
-                return latest.to_dto()
+                return latest.to_dto(), False
             state = HeartState(
                 bpm=data.bpm,
                 mood=data.mood,
@@ -247,9 +248,10 @@ class HeartService:
                 resting_hr=data.resting_hr,
                 time_of_day=tod,
             )
+            changed = False
 
         ctx.repo.save(state)
-        return state.to_dto()
+        return state.to_dto(), changed
 
     def latest(self, user_id: str | None = None) -> HeartStateDTO | None:
         ctx = self._contexts.get(user_id or DEFAULT_USER)
