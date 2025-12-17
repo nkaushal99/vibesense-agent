@@ -7,7 +7,7 @@ from vibesense.app.heart_api import router as heart_router
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="VibeSense API", docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title="VibeSense API")
     app.include_router(heart_router)
     app.include_router(preferences_router)
     return app

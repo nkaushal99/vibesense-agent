@@ -1,18 +1,16 @@
 """FastAgent integration kept separate from the API surface."""
 
-from __future__ import annotations
-
 import json
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
-from fastapi import HTTPException
 from dotenv import load_dotenv
+from fastapi import HTTPException
 
-from vibesense.app.heart_core import HeartStateDTO
 from vibesense.agent.prompt_loader import load_instruction
+from vibesense.app.heart_core import HeartStateDTO
 from vibesense.db import AgentContext, set_context
 
 load_dotenv()
@@ -21,10 +19,10 @@ MODEL = os.getenv("FAST_AGENT_MODEL", "google.gemini-2.5-flash")
 TEMPERATURE = float(os.getenv("FAST_AGENT_TEMPERATURE", "0.3"))
 
 try:
-    from fast_agent.core.fastagent import FastAgent  # type: ignore
-    from fast_agent.core.prompt import Prompt  # type: ignore
-    from fast_agent.types import RequestParams  # type: ignore
-except Exception as exc:  # pragma: no cover - import-time guard
+    from fast_agent.core.fastagent import FastAgent
+    from fast_agent.core.prompt import Prompt
+    from fast_agent.types import RequestParams
+except Exception as exc:
     raise RuntimeError("fast-agent-mcp is required for suggestions") from exc
 
 

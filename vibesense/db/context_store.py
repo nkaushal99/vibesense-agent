@@ -1,7 +1,5 @@
 """Context persistence (action/query/intensity) isolated from preferences."""
 
-from __future__ import annotations
-
 import time
 
 from vibesense.db.connection import db_lock, get_conn, init_db

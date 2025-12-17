@@ -1,7 +1,5 @@
 """High-level helpers to aggregate context + preferences."""
 
-from __future__ import annotations
-
 from typing import Any, Dict
 
 from vibesense.db.backend import get_backend

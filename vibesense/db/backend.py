@@ -4,8 +4,6 @@ The public db facade delegates to the configured backend so we can swap
 storage (e.g., Postgres) via configuration later without touching callers.
 """
 
-from __future__ import annotations
-
 import os
 from typing import Any, Protocol, runtime_checkable
 
