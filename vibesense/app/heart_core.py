@@ -34,6 +34,11 @@ class HeartStateDTO(BaseModel):
     workout_type: str | None = None
     resting_hr: float | None = None
     time_of_day: str | None = None
+    # Optional preference fields (for direct/evaluation requests)
+    preferred_genres: list[str] | None = None
+    avoid_genres: list[str] | None = None
+    favorite_artists: list[str] | None = None
+    notes: str | None = None
 
 
 @dataclass
@@ -238,7 +243,7 @@ class HeartService:
         if state is None:
             latest = ctx.stabilizer.latest() or ctx.repo.latest()
             if latest:
-                return latest.to_dto(), False
+                return latest.to_dto(), True
             state = HeartState(
                 bpm=data.bpm,
                 mood=data.mood,
@@ -248,7 +253,7 @@ class HeartService:
                 resting_hr=data.resting_hr,
                 time_of_day=tod,
             )
-            changed = False
+            changed = True
 
         ctx.repo.save(state)
         return state.to_dto(), changed
@@ -261,6 +266,12 @@ class HeartService:
         if stable:
             return stable.to_dto()
         return None
+
+    def reset(self, user_id: str | None = None) -> None:
+        """Reset the stabilizer and repository state for a user."""
+        uid = user_id or DEFAULT_USER
+        if uid in self._contexts:
+            del self._contexts[uid]
 
 
 # Singleton for app-wide sharing
