@@ -1,5 +1,8 @@
 """Heart-facing API router: ingest signals and fetch suggestions."""
 
+import json
+import logging
+import os
 import time
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -8,8 +11,59 @@ from typing import Optional, List
 from vibesense.agent import generate_agent_suggestion
 from vibesense.app.heart_core import HeartIngestRequest, HeartStateDTO, heart_service, time_of_day_bucket
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["heart"])
+
+# =============================================================================
+# Online Evaluation Client (fire-and-forget)
+# =============================================================================
+_eval_client = None
+
+def _get_eval_client():
+    """Lazy-load the evaluation client if configured."""
+    global _eval_client
+    eval_url = os.getenv("EVAL_SERVICE_URL")
+    if not eval_url:
+        return None
+    if _eval_client is None:
+        try:
+            from agent_evaluation_client import OnlineEvalClient
+            _eval_client = OnlineEvalClient(eval_url, timeout=0.1)
+            logger.info(f"[Eval] Client initialized: {eval_url}")
+        except ImportError:
+            logger.warning("[Eval] agent_evaluation_client not installed, skipping evaluation")
+    return _eval_client
+
+
+def _evaluate_suggestion(state: HeartStateDTO, suggestion: dict) -> None:
+    """Fire-and-forget evaluation of agent suggestion."""
+    client = _get_eval_client()
+    if not client:
+        return
+    
+    # Format input/output for evaluation
+    input_summary = f"bpm={state.bpm}, zone={state.zone}, workout={state.workout_type}, mood_override={state.mood}"
+    output_summary = json.dumps(suggestion, default=str)
+    
+    logger.info(f"[Eval] Sending evaluation: user={state.user_id}, bpm={state.bpm}, zone={state.zone}")
+    
+    try:
+        client.evaluate(
+            agent_id="vibesense-agent",
+            input=input_summary,
+            output=output_summary,
+            session_id=state.user_id,
+            metadata={"bpm": state.bpm, "zone": state.zone},
+            validation_criteria=[
+                "Suggestion mood should match the physiological state",
+                "Intensity should be appropriate for the heart rate zone",
+                "Search query should incorporate user preferences if available",
+            ]
+        )
+        logger.debug(f"[Eval] Event queued for evaluation")
+    except Exception as e:
+        logger.error(f"[Eval] Failed to send evaluation: {e}")
 
 
 class HeartIngestResponse(BaseModel):
@@ -28,6 +82,7 @@ async def ingest(body: HeartIngestRequest):
     if changed:
         suggestion = await generate_agent_suggestion(state)
         print(f"Suggestion: {suggestion}")
+        _evaluate_suggestion(state, suggestion)  # Fire-and-forget evaluation
     return HeartIngestResponse(status="ok", state=state, suggestion=suggestion, state_changed=changed)
 
 
@@ -108,6 +163,7 @@ async def direct_suggest(body: DirectSuggestionRequest):
     print(f"[/suggest] State for agent: bpm={state.bpm}, zone={state.zone}, workout={state.workout_type}, genres={state.preferred_genres}")
     
     suggestion = await generate_agent_suggestion(state)
+    _evaluate_suggestion(state, suggestion)  # Fire-and-forget evaluation
     
     return {
         "status": "ok",

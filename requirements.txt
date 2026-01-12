@@ -5,3 +5,4 @@ fastapi~=0.122.0
 pydantic~=2.12.5
 fast-agent-mcp == 0.4.4
 fastmcp == 2.14.0
+agent-evaluation-client @ git+https://oauth2:${GITLAB_TOKEN}@gitlab.com/demandbase/genai/agent-evaluation.git@from-gcp-eval/online-eval#subdirectory=src/agent_evaluation_client
